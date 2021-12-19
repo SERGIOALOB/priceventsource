@@ -1,0 +1,21 @@
+[[source]]
+name = "pypi"
+url = "https://pypi.org/simple"
+verify_ssl = true
+
+[dev-packages]
+
+[packages]
+nameko-kafka = "*"
+pymongo = "*"
+flask = "*"
+flask-nameko = "*"
+flask-swagger = "*"
+pandas = "*"
+pytest = "*"
+nameko-sqlalchemy = "*"
+sqlalchemy = "*"
+yagmail = "*"
+
+[requires]
+python_version = "3.8"

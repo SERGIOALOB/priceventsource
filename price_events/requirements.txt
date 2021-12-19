@@ -1,0 +1,3 @@
+nameko-kafka
+pymongo
+pytest

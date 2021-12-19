@@ -1,0 +1,9 @@
+AMQP_URI: amqp://${RABBIT_USER:guest}:${RABBIT_PASSWORD:guest}@${RABBIT_HOST:localhost}:${RABBIT_PORT:5672}/
+
+KAFKA_CONSUMER:
+  bootstrap_servers: 'broker:9092'
+  retry_backoff_ms: 100
+
+KAFKA_PRODUCER:
+  bootstrap_servers: 'broker:9092'
+  retries: 3

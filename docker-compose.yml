@@ -1,0 +1,99 @@
+version: '3.5'
+
+networks: 
+  rmoff_kafka:
+    name: rmoff_kafka
+
+
+services:
+  zookeeper:
+    image: confluentinc/cp-zookeeper:5.5.0
+    container_name: zookeeper
+    networks: 
+      - rmoff_kafka
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+
+  broker:
+    image: confluentinc/cp-kafka:5.5.0
+    container_name: broker
+    networks: 
+      - rmoff_kafka
+    depends_on:
+      - zookeeper
+    ports:
+      - "19092:19092"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://broker:9092,CONNECTIONS_FROM_HOST://localhost:19092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,CONNECTIONS_FROM_HOST:PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+
+  rabbit:
+    image: rabbitmq:3-management
+    ports:
+      - '5672:5672'
+      - '15672:15672'
+    networks: 
+      - rmoff_kafka
+
+  priceevents:
+    container_name: priceevents
+    build:
+      context: price_events
+    depends_on:
+      - rabbit
+      - broker
+    environment:
+        RABBIT_PASSWORD: "guest"
+        RABBIT_USER: "guest"
+        RABBIT_HOST: "rabbit"
+        RABBIT_PORT: "5672"
+        RABBIT_MANAGEMENT_PORT: "15672"
+        CONSUMER_METRIC_BATCH: "100"
+    volumes:
+      - "./price_events:/var/price_events/"
+    networks: 
+      - rmoff_kafka
+
+  pricestats:
+    container_name: pricestats
+    build:
+      context: price_stats
+    depends_on:
+      - rabbit
+      - broker
+    environment:
+        RABBIT_PASSWORD: "guest"
+        RABBIT_USER: "guest"
+        RABBIT_HOST: "rabbit"
+        RABBIT_PORT: "5672"
+        RABBIT_MANAGEMENT_PORT: "15672"
+        CONSUMER_METRIC_BATCH: "100"
+
+    volumes:
+      - "./price_stats:/var/price_stats/"
+    networks: 
+      - rmoff_kafka
+
+  api:
+    container_name: api
+    build:
+      context: api
+    depends_on:
+      - priceevents
+      - pricestats
+      - rabbit
+    ports:
+      - '8000:8000'
+    volumes:
+      - "./api:/var/api/"
+    networks: 
+      - rmoff_kafka
+
+# volumes:
+#   zookeeper_data:
+#     driver: local
+#   kafka_data:
+#     driver: local

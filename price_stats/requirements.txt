@@ -1,0 +1,4 @@
+nameko-kafka
+nameko-sqlalchemy
+pymongo
+yagmail

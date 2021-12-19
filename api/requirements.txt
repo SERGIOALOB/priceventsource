@@ -1,0 +1,6 @@
+flask
+flask-nameko
+flask-swagger
+pandas
+numpy
+openpyxl
