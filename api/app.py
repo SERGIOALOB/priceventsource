@@ -11,25 +11,94 @@ df = pd.read_csv('Data.csv', header = 1)
 
 
 rpc = FlaskPooledClusterRpcProxy()
+sample_dict = [{
+    'Id': 1,
+    'weights': 1,
+    'price': 1,
+    'timestamp': 't0'
+},
+{
+    'Id': 2,
+    'weights': 2,
+    'price': 2,
+    'timestamp': 't0'
+},
+{
+    'Id': 3,
+    'weights': 2,
+    'price': 3,
+    'timestamp': 't0'
+},
+{
+    'Id': 4,
+    'weights': 1,
+    'price': 4,
+    'timestamp': 't0'
+},
+{
+    'Id': 1,
+    'weights': 1,
+    'price': 5,
+    'timestamp': 't1'
+},
+{
+    'Id': 2,
+    'weights': 2,
+    'price': 6,
+    'timestamp': 't1'
+},
+{
+    'Id': 3,
+    'weights': 2,
+    'price': 9,
+    'timestamp': 't1'
+},
+{
+    'Id': 4,
+    'weights': 1,
+    'price': 8,
+    'timestamp': 't1'
+},
+{
+    'Id': 1,
+    'weights': 1,
+    'price': 10,
+    'timestamp': 't2'
+},
+{
+    'Id': 2,
+    'weights': 2,
+    'price': 18,
+    'timestamp': 't2'
+},
+{
+    'Id': 3,
+    'weights': 2,
+    'price': 18,
+    'timestamp': 't2'
+},
+{
+    'Id': 4,
+    'weights': 1,
+    'price': 8,
+    'timestamp': 't2'
+}]
 
 def load_data(df):
-    df = df.rename(columns={'Prices' : 'Unnamed 2'})
-    prices_df=df[df.columns[2:]].rename(columns=lambda x: "t" + str(int(str(x[8:]))-2))
-    pricesdict = prices_df.to_dict(orient='records') 
-    weights = df.drop(df.columns[2:], axis=1).to_dict(orient='records')
-    prices = [] 
-    for index in range(len(pricesdict)): 
-        for key, value in pricesdict[index].items(): 
-            record = { 
-                'timestamp': key, 
-                'price': value
-            
-    }
-            prices.append(record)
+    df = df.rename(columns={'Unnamed: 0': 'id'})
+    df = df.rename(columns={'Prices' : 'Unnamed: 2'})
+    prices_df = df[df.columns[2:]].rename(columns=lambda x: "t" + str(int(str(x[8:]))-2)).transpose()
+    weights = df[df.columns[1]]
+    price_dictionary = prices_df.to_dict(orient='index')
     result = []
-    for i in range(len(weights)): 
-        for j in range(len(pricesdict)):
-            record ={**prices[j],**weights[i]}
+    for index, value in price_dictionary.items():
+        for k, v in value.items():
+            record = {
+                'id' : k+1,
+                'price': value[k],
+                'weight': weights[k],
+                'timestamp': index
+            }
             result.append(record)
                         
     return result
@@ -67,8 +136,8 @@ def submit(num_prices):
         if n >= num_prices:
             break
         message = {
-            'id': row.get('Id',''),
-            'weight':row.get('weights',''),
+            'id': row.get('id',''),
+            'weight':row.get('weight',''),
             'price': row.get('price',''),
             'timestamp': row.get('timestamp','')
         }

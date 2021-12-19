@@ -14,7 +14,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.declarative import declarative_base
 
 DeclarativeBase = declarative_base()
-
+MAX_ID = 400
     
 class Price(DeclarativeBase):
     __tablename__ = "prices"
@@ -43,10 +43,6 @@ class Price(DeclarativeBase):
 
 engine = create_engine('sqlite:///data.sqlite', echo = True)
 DeclarativeBase.metadata.create_all(engine)
-SEND_EMAIL = False
-REPORT_PERIOD = 5 if not SEND_EMAIL else 3600
-EMAIL_SOURCE = 'myemail@mailserver.com'
-EMAIL_PASSWORD = 'mypassword'
 
 class PriceStats:
     """    Price stats  service  """
@@ -71,30 +67,38 @@ class PriceStats:
         return self._get_report()
 
 
-    def _calculate_return(self, price: dict):
-        last = self._get_last_record()
+    def _calculate_security_return(self, price: dict):
+        last = self._get_last_record_id(price)
         if last is None:
-            index_return = {'value': str('0')}
-        else:
-            security_price = str(float(price['price'])/float(last.price) - 1)
-            index_return = {'value': str(float(last.index_return) + (float(price['weight'])*float(security_price)))}
+            return str(0)
+        security_return = str(float(price['price'])/float(last.price) - 1)
+        return security_return
+
+    def _calculate_index_return(self, price: dict):
+        last = self._get_last_record_time(price)
+        security_return = self._calculate_security_return(price)
+
+        if last is None:
+            return {'value': str(float(price['weight'])*float(security_return))}
+            
+        index_return = {'value': str(float(last.index_return) + (float(price['weight'])*float(security_return)))}
         return index_return
 
     def _calculate_index(self, price: dict):
-        last = self._get_last_record()
+        last = self._get_last_record_id(price)
         if last is None:
             return {'value': 100}
-        else:
-            index_return = self._calculate_return(price)
-            price_index = {'value': str(float(last.price_index) + float(last.price_index)*float(index_return['value']))}
-            return price_index
+        
+        index_return = self._calculate_index_return(price)
+        price_index = {'value': str(float(last.price_index) + float(last.price_index)*float(index_return['value']))}
+        return price_index
 
     def _deserialise_message(self, message: bytes) -> dict:
         return json.loads(message.decode('utf-8'))
 
     def _insert_new_price(self, record_id: str, price: dict):
         price_index = self._calculate_index(price)
-        index_return = self._calculate_return(price)
+        index_return = self._calculate_index_return(price)
         price_db_record = Price(
             id=price['id'],
             price=str(price['price']),
@@ -113,18 +117,32 @@ class PriceStats:
         logging.info(f'New price inserted')
 
 
+    def _get_last_record_id(self, price):
+        with self.db.get_session() as session:
+            last = session.query(Price).filter(Price.id == price['id']).order_by(Price.seq_id.desc()).first()
+            return last
+
+    def _get_last_record_time(self, price):
+        with self.db.get_session() as session:
+            last = session.query(Price).filter(Price.timestamp == price['timestamp']).order_by(Price.seq_id.desc()).first()
+            return last
+
     def _get_last_record(self):
         with self.db.get_session() as session:
-            last = session.query(Price).order_by(Price.seq_id.desc()).first()
+            last = session.query(Price).filter(Price.id == MAX_ID).order_by(Price.seq_id.desc()).first()
             return last
 
         
 
     def _get_report(self):
         report_datetime = datetime.datetime.now()
+        try:
+            price_index = str(self._get_last_record().price_index)
+        except:
+            price_index = 'Not enough indexes for report'
         report = {
             'timestamp': str(report_datetime),
-            'price_index': str(self._get_last_record().price_index)
+            'price_index': price_index
         }
 
         return report
