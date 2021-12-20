@@ -22,11 +22,10 @@
 
 ## Run demo with docker compose
 
-1. Change to root folder: `cd blockchain-project`
-2. Run brokers with `docker-compose up --build broker rabbit zookeper`. Wait until they are ready (around 30 s).
-3. In a separate terminal, run the services: `docker-compose up --build priceevents pricestats api`
-4. Request a new report with `curl localhost:8000/report`
-5. Submit new 10 prices: `curl localhost:8000/submit/10`. Number of new prices can be any integer.
+1. Run brokers with `docker-compose up --build broker rabbit zookeper`. Wait until they are ready (around 30 s).
+2. In a separate terminal, run the services: `docker-compose up --build priceevents pricestats api`
+3. Request a new report with `curl localhost:8000/report`
+4. Submit new 10 prices: `curl localhost:8000/submit/10`. Number of new prices can be any integer.
 
 
 ## Automatic tests
