@@ -139,7 +139,7 @@ class PriceStats:
         try:
             price_index = str(self._get_last_record().price_index)
         except:
-            price_index = 'Not enough indexes for report'
+            price_index = '100'
         report = {
             'timestamp': str(report_datetime),
             'price_index': price_index
