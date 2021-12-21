@@ -28,7 +28,8 @@ class PriceEventsService:
 
 
     @rpc
-    def send(self, price_event):
-        self.send_message(message=price_event)
+    def send(self, price_events):
+        for price_event in price_events:
+            self.send_message(message=price_event)
+            logging.info(f'New price event {price_event}')
         self.producer.flush()
-        logging.info(f'New price event {price_event}')

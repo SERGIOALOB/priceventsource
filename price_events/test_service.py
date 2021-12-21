@@ -1,8 +1,7 @@
 """ Example of service unit testing best practice. """
 
 from nameko.testing.services import worker_factory
-from user_events import PriceEventsService
-import json
+from price_events import PriceEventsService
 
 def test_send():
     # create worker with mock dependencies

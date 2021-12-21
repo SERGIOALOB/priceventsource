@@ -1,123 +1,44 @@
-import logging
-from flask import Flask, Response
+from typing import Dict, Iterator
+from flask import Flask
+from flask.wrappers import Response
 from flask_nameko import FlaskPooledClusterRpcProxy
-import csv
 import json
-import ast
-import atexit
 import pandas as pd
+import logging
 
 df = pd.read_csv('Data.csv', header = 1)
 
-
 rpc = FlaskPooledClusterRpcProxy()
-sample_dict = [{
-    'Id': 1,
-    'weights': 1,
-    'price': 1,
-    'timestamp': 't0'
-},
-{
-    'Id': 2,
-    'weights': 2,
-    'price': 2,
-    'timestamp': 't0'
-},
-{
-    'Id': 3,
-    'weights': 2,
-    'price': 3,
-    'timestamp': 't0'
-},
-{
-    'Id': 4,
-    'weights': 1,
-    'price': 4,
-    'timestamp': 't0'
-},
-{
-    'Id': 1,
-    'weights': 1,
-    'price': 5,
-    'timestamp': 't1'
-},
-{
-    'Id': 2,
-    'weights': 2,
-    'price': 6,
-    'timestamp': 't1'
-},
-{
-    'Id': 3,
-    'weights': 2,
-    'price': 9,
-    'timestamp': 't1'
-},
-{
-    'Id': 4,
-    'weights': 1,
-    'price': 8,
-    'timestamp': 't1'
-},
-{
-    'Id': 1,
-    'weights': 1,
-    'price': 10,
-    'timestamp': 't2'
-},
-{
-    'Id': 2,
-    'weights': 2,
-    'price': 18,
-    'timestamp': 't2'
-},
-{
-    'Id': 3,
-    'weights': 2,
-    'price': 18,
-    'timestamp': 't2'
-},
-{
-    'Id': 4,
-    'weights': 1,
-    'price': 8,
-    'timestamp': 't2'
-}]
 
-def load_data(df):
+def load_data(df) -> Iterator[Dict]:
     df = df.rename(columns={'Unnamed: 0': 'id'})
     df = df.rename(columns={'Prices' : 'Unnamed: 2'})
     prices_df = df[df.columns[2:]].rename(columns=lambda x: "t" + str(int(str(x[8:]))-2)).transpose()
     weights = df[df.columns[1]]
-    price_dictionary = prices_df.to_dict(orient='index')
-    result = []
-    for index, value in price_dictionary.items():
-        for k, v in value.items():
-            record = {
-                'id' : k+1,
-                'price': value[k],
-                'weight': weights[k],
-                'timestamp': index
-            }
-            result.append(record)
-                        
-    return result
-
+    prices_dictionary = prices_df.to_dict(orient='index')
+    time=0.0
+    for k, v in prices_dictionary.items():
+        prices = []
+        for i in range(len(weights)):
+            
+            prices.append({'price': v[i], 'id': i+1, 'weight': weights[i]})
+        record = {
+            'prices': prices,
+            'timestamp': 't' + str(int(time))
+        }
+        time+=0.5
+        logging.info(f'record received: {record}')
+        yield record
 
 
 def create_app():
     app = Flask(__name__)
-    app.config.update(dict(
-        NAMEKO_AMQP_URI='amqp://rabbit'
-        )
-    )
-
+    app.config.update(dict(NAMEKO_AMQP_URI='amqp://rabbit'))
     rpc.init_app(app)
-    
     return app
 
 app = create_app()
-input_data_reader= load_data(df)
+input_data_iterator = load_data(df)
 
 @app.route('/healthcheck')
 def healthcheck():
@@ -131,18 +52,25 @@ def get_report():
 @app.route('/submit/<int:num_prices>', methods=["GET"])
 def submit(num_prices):
     """ Entry point to submit prices """
-    n=0
-    for row in input_data_reader:
+    n = 0
+    batch_size = 100
+    batch = []
+    for row in input_data_iterator:
         if n >= num_prices:
             break
         message = {
-            'id': row.get('id',''),
-            'weight':row.get('weight',''),
-            'price': row.get('price',''),
+            'prices': row.get('prices',''),
             'timestamp': row.get('timestamp','')
         }
-        rpc.priceevents.send(message)
+        batch.append(message)
+        if not n % batch_size:
+            rpc.priceevents.send(batch)
+            batch = []
         n += 1
+
+    if batch:
+        rpc.priceevents.send(batch)
+    
     return Response(f'Sent {n} new events', status=200)
 
     
