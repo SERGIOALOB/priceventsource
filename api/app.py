@@ -1,55 +1,61 @@
-from typing import Dict, Iterator
+from typing import Dict, Iterator, List
 from flask import Flask
 from flask.wrappers import Response
 from flask_nameko import FlaskPooledClusterRpcProxy
 import json
 import pandas as pd
 import logging
-
-df = pd.read_csv('Data.csv', header = 1)
+from decimal import Decimal
 
 rpc = FlaskPooledClusterRpcProxy()
 
-def load_data(df) -> Iterator[Dict]:
-    df = df.rename(columns={'Unnamed: 0': 'id'})
-    df = df.rename(columns={'Prices' : 'Unnamed: 2'})
-    prices_df = df[df.columns[2:]].rename(columns=lambda x: "t" + str(int(str(x[8:]))-2)).transpose()
-    weights = df[df.columns[1]]
-    prices_dictionary = prices_df.to_dict(orient='index')
-    time=0.0
-    for k, v in prices_dictionary.items():
-        prices = []
-        for i in range(len(weights)):
-            
-            prices.append({'price': v[i], 'id': i+1, 'weight': weights[i]})
-        record = {
-            'prices': prices,
-            'timestamp': 't' + str(int(time))
+
+def load_data() -> List[Dict]:
+    logging.info("Loading input data")
+    df = pd.read_excel("data/Data_small_small.xlsx")
+    del df["Id"]
+    records = df.to_dict("records")
+    weights = records[0]
+    prices = records[1:]
+    output = []
+    for timestamp, record in enumerate(prices):
+        indexes = weights.keys()
+        prices = {
+            key: {"price": Decimal(record[key]), "weight": Decimal(weights[key])}
+            for key in indexes
         }
-        time+=0.5
-        logging.info(f'record received: {record}')
-        yield record
+        price_record = {
+            "prices": prices,
+            "timestamp": timestamp,
+        }
+        output.append(price_record)
+    logging.info("Input data loaded")
+    return output
 
 
 def create_app():
     app = Flask(__name__)
-    app.config.update(dict(NAMEKO_AMQP_URI='amqp://rabbit'))
+    app.config.update(dict(NAMEKO_AMQP_URI="amqp://rabbit"))
     rpc.init_app(app)
     return app
 
+
 app = create_app()
-input_data_iterator = load_data(df)
+input_data_iterator = load_data()
 
-@app.route('/healthcheck')
+
+@app.route("/healthcheck")
 def healthcheck():
-    return 'All good from api!'
+    return "All good from api!"
 
-@app.route('/report', methods=["GET"])
-def get_report():
-    result = rpc.pricestats.report()
+
+@app.route("/report/<int:timestamp>", methods=["GET"])
+def get_report(timestamp):
+    result = rpc.pricestats.report(timestamp)
     return Response(json.dumps(result), status=200)
 
-@app.route('/submit/<int:num_prices>', methods=["GET"])
+
+@app.route("/submit/<int:num_prices>", methods=["GET"])
 def submit(num_prices):
     """ Entry point to submit prices """
     n = 0
@@ -58,11 +64,8 @@ def submit(num_prices):
     for row in input_data_iterator:
         if n >= num_prices:
             break
-        message = {
-            'prices': row.get('prices',''),
-            'timestamp': row.get('timestamp','')
-        }
-        batch.append(message)
+        logging.warning(row)
+        batch.append(row)
         if not n % batch_size:
             rpc.priceevents.send(batch)
             batch = []
@@ -70,9 +73,9 @@ def submit(num_prices):
 
     if batch:
         rpc.priceevents.send(batch)
-    
-    return Response(f'Sent {n} new events', status=200)
 
-    
-if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=8000)
+    return Response(f"Sent {n} new events", status=200)
+
+
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=8000)
