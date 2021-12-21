@@ -66,15 +66,20 @@ class PriceStats:
     @consume("price_event", group_id="price_event")
     def consume_price_event(self, new_price_event: bytes):
         """ Subcribe price_event topic and update database """
+
+
         message = self._deserialise_message(message=new_price_event.value)
         if not message:
             return
+        
+        logging.info(f"Message received")
+        
         event_id = f"{new_price_event.topic}-{new_price_event.offset}-{new_price_event.timestamp}"
 
         if self._check_already_processed_event(event_id):
             logging.info(f"Duplicated event {event_id}")
             return
-        logging.info(f"Message received")
+    
         prices = message.get("prices", {})
         timestamp = message["timestamp"]
         self._insert_new_prices(timestamp, prices)
@@ -86,21 +91,23 @@ class PriceStats:
 
         previous_timestamp = timestamp - 1
         record_previous_t = self._get_prices_at_timestamp(previous_timestamp)
-        previous_index_price = self._get_index_at_timestamp(previous_timestamp)
 
         if not record_previous_t:
-            logging.info(f"Unable to find previous prices for timetamp = {timestamp}")
+            logging.info(f"Unable to find previous prices for timestamp = {timestamp}")
             return
+
+        previous_index_price = self._get_index_at_timestamp(previous_timestamp)
 
         if not previous_index_price:
             logging.info(
-                f"Unable to find previous index price for timetamp = {timestamp}"
+                f"Unable to find previous index price for timestamp = {timestamp}"
             )
             return
 
         index_return_t = self._calculate_return_of_the_index_on_date_t(
             record_previous_t, message
         )
+
         if not index_return_t:
             logging.info(f"Unable to compute index price at timestamp {timestamp}.")
             return
@@ -140,10 +147,12 @@ class PriceStats:
             x.index: {"price": Decimal(x.price), "weight": Decimal(x.weight)}
             for x in prices_at_t
         }
+
         record_at_t = {
             "prices": prices_at_t_dict,
             "timestamp": timestamp,
         }
+
         return record_at_t
 
     def _get_index_at_timestamp(self, timestamp: int) -> Optional[Dict]:
@@ -176,6 +185,7 @@ class PriceStats:
         indexes_t0 = prices_t0.keys()
         indexes_t1 = prices_t1.keys()
 
+        # Both prices have same indexes, if not, break.#
         if sorted(indexes_t0) != sorted(indexes_t1):
             return
 
@@ -209,6 +219,7 @@ class PriceStats:
         except (KeyError, ValueError):
             logging.warning(f"Unable to parse message: {message}")
             return
+
         return record_parsed
 
     def _insert_index_return(self, timestamp, index_price, index_return):
@@ -224,12 +235,13 @@ class PriceStats:
             )
             if not price_index_at_t:
                 session.add(index_db_record)
-                session.commit()
                 logging.info(f"New index price inserted Timestamp={timestamp}")
+
             else:
                 logging.info(f"Updating index price at timestamp {timestamp}")
                 price_index_at_t.price = index_db_record.price
                 price_index_at_t.index_return = index_db_record.index_return
+
             session.commit()
 
     def _insert_new_prices(self, timestamp: int, prices: Dict):
@@ -272,8 +284,10 @@ class PriceStats:
             try:
                 event_id_db = Event(event_id=event_id)
                 session.add(event_id_db)
+                session.commit()
             except IntegrityError:
                 logging.info("Duplicated event. Ignore error")
+            
 
     def _check_already_processed_event(self, event_id):
         with self.db.get_session() as session:

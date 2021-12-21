@@ -1,4 +1,4 @@
-from typing import Dict, Iterator, List
+from typing import Dict, List
 from flask import Flask
 from flask.wrappers import Response
 from flask_nameko import FlaskPooledClusterRpcProxy
@@ -64,7 +64,6 @@ def submit(num_prices):
     for row in input_data_iterator:
         if n >= num_prices:
             break
-        logging.warning(row)
         batch.append(row)
         if not n % batch_size:
             rpc.priceevents.send(batch)
