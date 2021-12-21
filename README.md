@@ -16,11 +16,14 @@
   - consumes messages from kafka
   - insert a new record into a sqlite database for each new price event
 
+### Database
+- Used sqlite
+
 ### Brokers
 
 - Zookeeper: Required by kafka
 - Kafka: Messages
-- Rabbit: Async communication between services
+- Rabbit: Communication between services
 
 ## Run demo with docker compose
 
@@ -31,7 +34,7 @@
 
 ## Automatic tests
 
-Created one example of test for price event service. Run `docker-compose run --entrypoint=bash priceevents /var/price_events/run-tests.sh`
+Created a couple of tests for each service. Run `docker-compose run --entrypoint=bash priceevents /var/price_events/run-tests.sh`
   
 ## Local development env
 

@@ -1,7 +1,5 @@
 FROM python:3.8
 
-
-
 WORKDIR /var/price_events/
 COPY requirements.txt requirements.txt
 

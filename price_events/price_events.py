@@ -12,11 +12,17 @@ class PriceEventsService:
     name = "priceevents"
     config = Config()
     producer = KafkaProducer()
+    
+    @rpc
+    def send(self, price_events):
+        for price_event in price_events:
+            self.send_message(message=price_event)
+            logging.info(f"New price event {price_event}")
+        self.producer.flush()
 
     def _on_send_error(self, excp):
         logging.error("Error sending message", exc_info=excp)
         # handle exception
-        # Note: implement a retry logic, or a dead letter queue, ...
 
     def serialise_message(self, message: dict) -> bytes:
         return json.dumps(message).encode("utf-8")
@@ -27,9 +33,3 @@ class PriceEventsService:
         )
         future.add_errback(self._on_send_error)
 
-    @rpc
-    def send(self, price_events):
-        for price_event in price_events:
-            self.send_message(message=price_event)
-            logging.info(f"New price event {price_event}")
-        self.producer.flush()
