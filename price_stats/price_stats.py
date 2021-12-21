@@ -1,7 +1,6 @@
-import datetime
 import json
 import logging
-from typing import Dict, Optional
+from typing import Dict, List, Optional
 from decimal import Decimal
 
 from nameko.dependency_providers import Config
@@ -10,8 +9,15 @@ from nameko_kafka import consume
 from nameko_sqlalchemy import Database
 from sqlalchemy import Column, String, create_engine, func, desc, Integer
 from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.exc import IntegrityError
+
 
 DeclarativeBase = declarative_base()
+
+
+class Event(DeclarativeBase):
+    __tablename__ = "events"
+    event_id = Column(String, primary_key=True)
 
 
 class Price(DeclarativeBase):
@@ -63,18 +69,15 @@ class PriceStats:
         message = self._deserialise_message(message=new_price_event.value)
         if not message:
             return
+        event_id = f"{new_price_event.topic}-{new_price_event.offset}-{new_price_event.timestamp}"
 
-        logging.info(f"Message received: {message}")
+        if self._check_already_processed_event(event_id):
+            logging.info(f"Duplicated event {event_id}")
+            return
+        logging.info(f"Message received")
         prices = message.get("prices", {})
         timestamp = message["timestamp"]
-        for index, record in prices.items():
-            price = {
-                "index": index,
-                "weight": record["weight"],
-                "price": record["price"],
-                "timestamp": timestamp,
-            }
-            self._insert_new_price(price)
+        self._insert_new_prices(timestamp, prices)
 
         if timestamp == 0:
             logging.info("Timestamp is 0. Inserting index price = 100")
@@ -99,15 +102,15 @@ class PriceStats:
             record_previous_t, message
         )
         if not index_return_t:
-            logging.info(
-                f"Unable to compute index price at timestamp {timestamp}. Previous price: {record_previous_t}. Current price: {message}"
-            )
+            logging.info(f"Unable to compute index price at timestamp {timestamp}.")
             return
 
         index_price_t = previous_index_price["price"] * (1 + index_return_t)
         self._insert_index_return(
             timestamp=timestamp, index_price=index_price_t, index_return=index_return_t
         )
+
+        self._insert_event_id(event_id)
 
     @rpc
     def report(self, timestamp):
@@ -173,17 +176,19 @@ class PriceStats:
         indexes_t0 = prices_t0.keys()
         indexes_t1 = prices_t1.keys()
 
-        if indexes_t0 != indexes_t1:
+        if sorted(indexes_t0) != sorted(indexes_t1):
             return
 
-        index_return_t = 0
+        r_t = []
         for index in indexes_t0:
             price_t0_i = prices_t0[index]
             price_t1_i = prices_t1[index]
-            r_i = price_t1_i["price"] / price_t0_i["price"] - 1
-            index_return_t += index_return_t + price_t1_i["weight"] * r_i
+            r_i = Decimal(price_t1_i["price"]) / Decimal(price_t0_i["price"]) - Decimal(
+                1.0
+            )
+            r_t.append(Decimal(price_t1_i["weight"]) * r_i)
 
-        return Decimal(index_return_t)
+        return Decimal(sum(r_t))
 
     @staticmethod
     def _deserialise_message(message: bytes) -> Optional[Dict]:
@@ -221,40 +226,58 @@ class PriceStats:
                 session.add(index_db_record)
                 session.commit()
                 logging.info(f"New index price inserted Timestamp={timestamp}")
-                return
-
-            logging.info(f"Updating index price at timestamp {timestamp}")
-            price_index_at_t.price = index_db_record.price
-            price_index_at_t.index_return = index_db_record.index_return
+            else:
+                logging.info(f"Updating index price at timestamp {timestamp}")
+                price_index_at_t.price = index_db_record.price
+                price_index_at_t.index_return = index_db_record.index_return
             session.commit()
 
-    def _insert_new_price(self, price: dict):
-        price_db_record = Price(
-            index=price["index"],
-            price=str(price["price"]),
-            timestamp=price["timestamp"],
-            weight=str(price["weight"]),
-        )
-
+    def _insert_new_prices(self, timestamp: int, prices: Dict):
         with self.db.get_session() as session:
-            price_i_t = (
-                session.query(Price)
-                .filter(Price.timestamp == price_db_record.timestamp)
-                .filter(Price.index == price_db_record.index)
-                .first()
-            )
-            if not price_i_t:
-                session.add(price_db_record)
-                session.commit()
-                logging.info(
-                    f"New price record inserted. (timestamp = {price_db_record.timestamp}, index: {price_db_record.index})"
+            for index, record in prices.items():
+                price = {
+                    "index": index,
+                    "weight": record["weight"],
+                    "price": record["price"],
+                    "timestamp": timestamp,
+                }
+                price_db_record = Price(
+                    index=price["index"],
+                    price=str(price["price"]),
+                    timestamp=price["timestamp"],
+                    weight=str(price["weight"]),
                 )
-                return
+                price_i_t = (
+                    session.query(Price)
+                    .filter(Price.timestamp == price_db_record.timestamp)
+                    .filter(Price.index == price_db_record.index)
+                    .first()
+                )
+                if not price_i_t:
+                    session.add(price_db_record)
+                    logging.info(
+                        f"New price record inserted. (timestamp = {price_db_record.timestamp}, index: {price_db_record.index})"
+                    )
+                else:
+                    logging.info(
+                        f"Updating prices at index: (timestamp = {price_db_record.timestamp}, index: {price_db_record.index})"
+                    )
+                    price_i_t.price = price_db_record.price
+                    price_i_t.weight = price_db_record.weight
 
-            logging.info(
-                f"Updating prices at index: (timestamp = {price_db_record.timestamp}, index: {price_db_record.index})"
-            )
-
-            price_i_t.price = price_db_record.price
-            price_i_t.weight = price_db_record.weight
             session.commit()
+
+    def _insert_event_id(self, event_id):
+        with self.db.get_session() as session:
+            try:
+                event_id_db = Event(event_id=event_id)
+                session.add(event_id_db)
+            except IntegrityError:
+                logging.info("Duplicated event. Ignore error")
+
+    def _check_already_processed_event(self, event_id):
+        with self.db.get_session() as session:
+            event = session.query(Event).filter(Event.event_id == event_id).first()
+            if event:
+                return True
+            return False

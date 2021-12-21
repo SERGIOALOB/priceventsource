@@ -12,7 +12,7 @@ rpc = FlaskPooledClusterRpcProxy()
 
 def load_data() -> List[Dict]:
     logging.info("Loading input data")
-    df = pd.read_excel("data/Data_small_small.xlsx")
+    df = pd.read_excel("data/Data_small.xlsx")
     del df["Id"]
     records = df.to_dict("records")
     weights = records[0]

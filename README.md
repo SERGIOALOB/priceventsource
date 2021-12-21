@@ -31,11 +31,13 @@
 
 ## Automatic tests
 
-Created one example of test for price event and api service. Run `docker-compose run --entrypoint=bash "service" /var/price_events/run-tests.sh`
+Created one example of test for price event service. Run `docker-compose run --entrypoint=bash priceevents /var/price_events/run-tests.sh`
   
 ## Local development env
 
 Developement enviroment can be created with `pipenv install`
 
-## "TODO":
+## "TODO"
 
+- Improve exception handling in database queries and communication with kafka
+- Add more unit test to increase coverage. Only one test has been included.
