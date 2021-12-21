@@ -2,7 +2,7 @@
 
 ## Architecture
 
-![test](./priceevents.png)
+![test](./price_events_architecture.png)
 
 ### Services
 
